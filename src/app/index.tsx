@@ -1,14 +1,17 @@
 import { Buffer } from 'buffer'; // Run: npm install buffer
 import { useEffect, useState } from 'react';
-import { Button, FlatList, PermissionsAndroid, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Button, FlatList, PermissionsAndroid, Platform,
+  StyleSheet, Text, TouchableOpacity, View
+} from 'react-native';
 import { BleManager, Device } from 'react-native-ble-plx';
 
 const manager = new BleManager();
 
 // Replace these with your target device's UUIDs
-const SERVICE_UUID = '0x180F' //'12345678-1234-5678-1234-567812345678';
-const CHAR_UUID_READ = '87654321-4321-4321-4321-210987654321';
-const CHAR_UUID_WRITE = 'abcdef01-abcd-abcd-abcd-abcdef012345';
+const SERVICE_UUID = "0000181C-0000-1000-8000-00805f9b34fb"; //0x181C; //'FEE0'; //'12345678-1234-5678-1234-567812345678';
+const CHAR_UUID_READ = "00002A8A-0000-1000-8000-00805f9b34fb"; //0x2AB4; //'2A19'; //'87654321-4321-4321-4321-210987654321';
+const CHAR_UUID_WRITE = '00002ab4-0000-1000-8000-00805f9b34fb';
 const CHAR_UUID_NOTIFY = 'fedcba98-fedc-fedc-fedc-fedcba987654';
 
 export default function Index() {
@@ -87,13 +90,16 @@ export default function Index() {
   const readCharacteristic = async () => {
     if (!connectedDevice) return;
     try {
-      const char = await manager.readCharacteristicForDevice(
-        connectedDevice.id,
+      const device_id:string = connectedDevice.id.toString();
+      const characteristic = await manager.readCharacteristicForDevice(
+        device_id,
         SERVICE_UUID,
         CHAR_UUID_READ
       );
       // Decode Base64 string back to readable text/numbers
-      const rawData = Buffer.from(char.value || '', 'base64').toString('ascii');
+      const rawData = Buffer.from(characteristic.value || '', 'base64').toString('ascii');
+      //const rawData = characteristic.value;
+      console.log('Read Value:', rawData);
       setReceivedData(`Read Value: ${rawData}`);
     } catch (error) {
       console.log('Read failed:', error);
@@ -110,8 +116,8 @@ export default function Index() {
       // Use writeCharacteristicWithResponseForDevice for Write Request
       // Use writeCharacteristicWithoutResponseForDevice for Write Command
       await manager.writeCharacteristicWithResponseForDevice(
-        connectedDevice.id,
-        SERVICE_UUID,
+        connectedDevice.id.toString(),
+        "00001523-1212-EFDE-1523-785FEABCD123",
         CHAR_UUID_WRITE,
         base64Value
       );
@@ -160,7 +166,7 @@ export default function Index() {
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
               <TouchableOpacity style={styles.deviceRow} onPress={() => connectToDevice(item)}>
-                <Text>{item.name} - ({item.id} - {item.rssi ? `${item.rssi} dBm` : 'Unknown RSSI'})</Text>
+                {item.isConnectable?(<Text>{item.name} {item.id} - {item.rssi} dBm</Text>):(<Text>---</Text>)}
               </TouchableOpacity>
             )}
           />
