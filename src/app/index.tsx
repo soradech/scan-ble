@@ -1,36 +1,27 @@
 import { Buffer } from 'buffer'; // Run: npm install buffer
 import { useEffect, useState } from 'react';
 import {
-  Alert,
-  Button, FlatList, PermissionsAndroid, Platform,
-  StyleSheet, Text,
-  TextInput,
-  TouchableOpacity, View
+  Alert, Button, FlatList, PermissionsAndroid, Platform,
+  StyleSheet, Text, TextInput, TouchableOpacity, View
 } from 'react-native';
 import { BleManager, Device } from 'react-native-ble-plx';
 
 const manager = new BleManager();
 
 // Replace these with your target device's UUIDs
-//const SERVICE_UUID = "0000181C-0000-1000-8000-00805f9b34fb"; //0x181C; //'FEE0'; //'12345678-1234-5678-1234-567812345678';
-//const CHAR_UUID_READ = "00002A8A-0000-1000-8000-00805f9b34fb"; //0x2AB4; //'2A19'; //'87654321-4321-4321-4321-210987654321';
-//const CHAR_UUID_WRITE = '00002ab4-0000-1000-8000-00805f9b34fb';
-//const CHAR_UUID_NOTIFY = 'fedcba98-fedc-fedc-fedc-fedcba987654';
-
 const SERVICE_UUID = 'aee04821-1973-4e1f-a590-e84b10d580e7';
-const CHAR_UUID_READ = 'cde07b1a-889b-44b7-a99f-c888dddac729';
-const CHAR_UUID_WRITE = 'cde07b1a-889b-44b7-a99f-c888dddac729';
+const CHAR_UUID = 'cde07b1a-889b-44b7-a99f-c888dddac729'; //
+const CHAR_UUID_NOTIFY = 'cde07b1a-889b-44b7-a99f-c888dddac729'; // Same as CHAR_UUID for this example
 
 export default function Index() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [connectedDevice, setConnectedDevice] = useState<Device | null>(null);
   const [receivedData, setReceivedData] = useState<string>('');
-  const [writeValue, setWriteValue] = useState('');
+  const [writeValue, setWriteValue] = useState<string>('');
 
   async function requestPermissions() {
     manager.stopDeviceScan();
-    if (Platform.OS === 'android') {
-      // Android 12+ permissions
+    if (Platform.OS === 'android') { // Android 12+ permissions
       if (Platform.Version >= 31) {
         const granted = await PermissionsAndroid.requestMultiple([
           PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
@@ -42,8 +33,7 @@ export default function Index() {
           granted['android.permission.BLUETOOTH_CONNECT'] === PermissionsAndroid.RESULTS.GRANTED &&
           granted['android.permission.ACCESS_FINE_LOCATION'] === PermissionsAndroid.RESULTS.GRANTED
         );
-      } else {
-        // Android 11 or lower
+      } else { // Android 11 or lower
         const granted = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
         );
@@ -53,14 +43,16 @@ export default function Index() {
     return true; // iOS handles this via Info.plist when the scan starts
   }
 
-  useEffect(() => {
+  useEffect(() => { // Request permissions on mount
     requestPermissions().then((granted) => {
       if (!granted) {
         console.log('Bluetooth permissions not granted');
       }
     });
+    return () => {
+      manager.stopDeviceScan();
+    };
   }, []);
-
 
 
   // 1. Scan for Peripherals
@@ -102,13 +94,12 @@ export default function Index() {
       const characteristic = await manager.readCharacteristicForDevice(
         device_id,
         SERVICE_UUID,
-        CHAR_UUID_READ
+        CHAR_UUID
       );
       // Decode Base64 string back to readable text/numbers
       const rawData = Buffer.from(characteristic.value || '', 'base64').toString('ascii');
-      //const rawData = characteristic.value;
-      console.log('Read Value:', rawData);
       setReceivedData(`Read Value: ${rawData}`);
+      console.log('Read Value:', rawData);
     } catch (error) {
       console.log('Read failed:', error);
     }
@@ -123,19 +114,15 @@ export default function Index() {
     } 
     try {
       // Data MUST be converted to Base64
-      let greeting = "Hello " + writeValue;
-      greeting = greeting + " from React Native BLE PLX!";
-      const base64Value = Buffer.from(greeting.toString()).toString('base64');
+      const base64Value = Buffer.from(writeValue, 'utf-8').toString('base64');
       const device_id:string = connectedDevice.id.toString();
-      // Use writeCharacteristicWithResponseForDevice for Write Request
-      // Use writeCharacteristicWithoutResponseForDevice for Write Command
-      await manager.writeCharacteristicWithResponseForDevice(
-        device_id,
-        SERVICE_UUID,
-        CHAR_UUID_WRITE,
-        base64Value
-      );
-      console.log('Write successful:', greeting.toString());
+
+      // Use writeCharacteristicWithResponseForDevice() for Write Request
+      // Use writeCharacteristicWithoutResponseForDevice() for Write Command
+      await manager.writeCharacteristicWithResponseForDevice( device_id, SERVICE_UUID,
+                                                              CHAR_UUID, base64Value);
+      Alert.alert('Write Success', `Value "${writeValue}" written successfully.`);
+      setWriteValue(''); // Clear input after successful write
     } catch (error) {
       console.log('Write failed:', error);
     }
@@ -146,10 +133,7 @@ export default function Index() {
     if (!connectedDevice) return;
 
     // monitorCharacteristicForDevice handles both Notifications and Indications
-    manager.monitorCharacteristicForDevice(
-      connectedDevice.id,
-      SERVICE_UUID,
-      CHAR_UUID_NOTIFY,
+    manager.monitorCharacteristicForDevice(connectedDevice.id, SERVICE_UUID, CHAR_UUID_NOTIFY,
       (error, char) => {
         if (error) {
           console.log('Notification error:', error);
@@ -163,16 +147,17 @@ export default function Index() {
     );
   };
 
-  // Clean up connections on unmount
-  //useEffect(() => {
-  //  return () => {
-  //    manager.stopDeviceScan();
-  //  };
-  //}, []);
+  // 6. Disconnect from Device
+  const disconnectDevice = async () => {
+    if (!connectedDevice) return; 
+    await manager.cancelDeviceConnection(connectedDevice.id);
+    setConnectedDevice(null);
+    Alert.alert('Disconnected', 'Device has been disconnected.');
+  };
 
-  return (
+  return (  // Render the UI based on connection state
     <View style={styles.container}>
-      {!connectedDevice ? (
+      {!connectedDevice ? ( // if no device is connected, show the scan list
         <>
           <Button title="Scan Devices" onPress={startScan} />
           <FlatList
@@ -185,26 +170,25 @@ export default function Index() {
             )}
           />
         </>
-      ) : (
+      ) : (  // if a device is connected, show the dashboard
         <View style={styles.dashboard}>
           <Text style={styles.title}>Connected to: {connectedDevice.name}</Text>
           <Text style={styles.dataBox}>{receivedData || "No data fetched yet"}</Text>
-          
-          <Button title="Read Value" onPress={readCharacteristic} />
-          <TextInput style={styles.input} value={writeValue} onChange={(text) => setWriteValue(text)} 
+          <Button title="Read Value" onPress={readCharacteristic} />          
+          <Text>Enter your name:</Text>
+          <TextInput style={styles.input} value={writeValue} onChangeText={setWriteValue} 
                 placeholder="Enter value to write" />  
           <Button title="Write Value" onPress={writeCharacteristic} />
-          <Button title="Subscribe to Notifications" onPress={startNotificationStream} />
-          <Button title="Disconnect" onPress={() => {
-            manager.cancelDeviceConnection(connectedDevice.id);
-            setConnectedDevice(null);
-          }} />
+          {/* Button Subscribed to Notifications is disabled. Enable it when needed */}
+          <Button disabled={true} title="Subscribe to Notifications" onPress={startNotificationStream} />
+          <Button title="Disconnect" onPress={disconnectDevice} />
         </View>
       )}
     </View>
   );
 }
 
+//Styles for the UI components
 const styles = StyleSheet.create({
   container: { flex: 1, paddingTop: 25, paddingHorizontal: 20, backgroundColor: '#fff' },
   deviceRow: { padding: 15, marginVertical: 5, backgroundColor: '#f0f0f0', borderRadius: 5 },
